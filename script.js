@@ -454,7 +454,7 @@
   }
 
   /* ======================================================================
-     ESCENA "DEL AMINOÁCIDO A LA SEÑAL" (anclada al scroll)
+     ESCENA "DEL AMINOÁCIDO A LA SEÑAL" (carrusel automático)
      ====================================================================== */
   class StoryScene {
     constructor(canvas) {
@@ -642,6 +642,24 @@
     if (!sec) return;
     const canvas = $('.story__canvas', sec);
     if (canvas && !reduced) storyScene = new StoryScene(canvas);
+    if (reduced) return; // con movimiento reducido se muestran los 4 pasos juntos (ver CSS)
+
+    // Avanza sola cada pocos segundos (ya no depende del scroll), para que se vea que "pasa algo"
+    const steps = $$('.story-step', sec), ticks = $$('.story__tick', sec);
+    if (steps.length < 2) return;
+    let cur = 0, timer = 0;
+    const show = i => {
+      cur = i;
+      steps.forEach((s, k) => s.classList.toggle('is-active', k === i));
+      ticks.forEach((t, k) => t.classList.toggle('is-active', k === i));
+      const p = i / (steps.length - 1);
+      sec.style.setProperty('--p', p.toFixed(3));
+      if (storyScene) storyScene.target = p;
+    };
+    const play = () => { clearInterval(timer); timer = setInterval(() => show((cur + 1) % steps.length), 6000); };
+    if ('IntersectionObserver' in window) {
+      new IntersectionObserver(([en]) => { if (en.isIntersecting) play(); else clearInterval(timer); }, { threshold: 0.4 }).observe(sec);
+    } else play();
   }
 
   /* ======================================================================
@@ -910,7 +928,7 @@
   /* ======================================================================
      MOTOR DE SCROLL + BUCLE DE ANIMACIÓN
      ====================================================================== */
-  const M = { vh: 0, vw: 0, docH: 0, story: null, expand: null, track: null, dark: [] };
+  const M = { vh: 0, vw: 0, docH: 0, expand: null, track: null, dark: [] };
   const dom = {};
   const last = {};
 
@@ -919,7 +937,6 @@
     const top = el => el.getBoundingClientRect().top + sy;
     M.vh = window.innerHeight; M.vw = window.innerWidth;
     M.docH = document.documentElement.scrollHeight;
-    if (dom.story) M.story = { top: top(dom.story), h: dom.story.offsetHeight };
     if (dom.expand) M.expand = { top: top(dom.expand), h: dom.expand.offsetHeight };
     if (dom.track) M.track = { top: top(dom.track), h: dom.track.offsetHeight };
     M.dark = dom.darkSecs.map(s => ({ top: top(s), bottom: top(s) + s.offsetHeight }));
@@ -939,22 +956,6 @@
     const probe = y + 40;
     const onDark = M.dark.some(d => probe >= d.top && probe < d.bottom);
     if (onDark !== last.onDark && dom.header) { dom.header.classList.toggle('on-dark', onDark); last.onDark = onDark; }
-
-    // Escena de la ciencia
-    if (dom.story && M.story && !reduced) {
-      const p = clamp((y - M.story.top) / Math.max(1, M.story.h - vh));
-      if (Math.abs(p - (last.p || 0)) > 0.0004) {
-        dom.story.style.setProperty('--p', p.toFixed(4));
-        last.p = p;
-        if (storyScene) storyScene.target = p;
-        const idx = Math.min(3, Math.floor(p * 4));
-        if (idx !== last.step) {
-          dom.steps.forEach((s, i) => s.classList.toggle('is-active', i === idx));
-          dom.ticks.forEach((s, i) => s.classList.toggle('is-active', i === idx));
-          last.step = idx;
-        }
-      }
-    }
 
     // Imagen que se expande
     if (dom.expand && M.expand && !reduced) {
@@ -981,9 +982,6 @@
   function startLoop() {
     dom.progress = $('#progreso');
     dom.header = $('.site-header');
-    dom.story = $('[data-story]');
-    dom.steps = $$('.story-step');
-    dom.ticks = $$('.story__tick');
     dom.expand = $('[data-expand]');
     dom.track = $('.process__track');
     dom.line = $('.process__line');
